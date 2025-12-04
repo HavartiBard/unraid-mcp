@@ -129,6 +129,85 @@ def register_storage_tools(mcp: FastMCP) -> None:
             raise ToolError(f"Failed to list notifications: {str(e)}") from e
 
     @mcp.tool()
+    async def archive_notification(notification_id: str) -> dict[str, Any]:
+        """Archives a single notification by its ID.
+
+        Args:
+            notification_id: The ID of the notification to archive
+
+        Returns:
+            Dict containing the result of the archive operation
+        """
+        mutation = """
+        mutation ArchiveNotification($ids: [PrefixedID!]!) {
+          archiveNotifications(ids: $ids) {
+            unread { info warning alert total }
+            archive { info warning alert total }
+          }
+        }
+        """
+        variables = {"ids": [notification_id]}
+        try:
+            logger.info(f"Executing archive_notification for: {notification_id}")
+            response_data = await make_graphql_request(mutation, variables)
+            result = response_data.get("archiveNotifications")
+            if result is not None:
+                return {"success": True, "notification_id": notification_id, "result": result}
+            return {"success": False, "notification_id": notification_id, "error": "No response from mutation", "raw": response_data}
+        except Exception as e:
+            logger.error(f"Error in archive_notification: {e}", exc_info=True)
+            raise ToolError(f"Failed to archive notification: {str(e)}") from e
+
+    @mcp.tool()
+    async def archive_all_notifications() -> dict[str, Any]:
+        """Archives all unread notifications.
+
+        Returns:
+            Dict containing the result of the archive operation
+        """
+        # First, get all unread notification IDs
+        list_query = """
+        query ListAllUnreadNotifications {
+          notifications {
+            list(filter: { type: UNREAD, offset: 0, limit: 500 }) {
+              id
+            }
+          }
+        }
+        """
+        try:
+            logger.info("Executing archive_all_notifications - fetching unread IDs")
+            list_response = await make_graphql_request(list_query)
+            notifications = []
+            if list_response.get("notifications"):
+                notifications = list_response["notifications"].get("list", [])
+            
+            if not notifications:
+                return {"success": True, "message": "No unread notifications to archive", "archived_count": 0}
+            
+            # Extract IDs
+            notification_ids = [n["id"] for n in notifications if n.get("id")]
+            
+            # Now archive them all
+            mutation = """
+            mutation ArchiveNotifications($ids: [PrefixedID!]!) {
+              archiveNotifications(ids: $ids) {
+                unread { info warning alert total }
+                archive { info warning alert total }
+              }
+            }
+            """
+            variables = {"ids": notification_ids}
+            response_data = await make_graphql_request(mutation, variables)
+            result = response_data.get("archiveNotifications")
+            if result is not None:
+                return {"success": True, "result": result, "archived_count": len(notification_ids)}
+            return {"success": False, "error": "No response from mutation", "raw": response_data}
+        except Exception as e:
+            logger.error(f"Error in archive_all_notifications: {e}", exc_info=True)
+            raise ToolError(f"Failed to archive all notifications: {str(e)}") from e
+
+    @mcp.tool()
     async def list_available_log_files() -> list[dict[str, Any]]:
         """Lists all available log files that can be queried."""
         query = """

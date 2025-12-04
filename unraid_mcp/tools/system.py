@@ -20,7 +20,7 @@ async def _get_system_info() -> dict[str, Any]:
     query = """
     query GetSystemInfo {
       info {
-        os { platform distro release codename kernel arch hostname codepage logofile serial build uptime }
+        os { platform distro release codename arch hostname logofile serial build uptime }
         cpu { manufacturer brand vendor family model stepping revision voltage speed speedmin speedmax threads cores processors socket cache flags }
         memory {
           # Avoid fetching problematic fields that cause type errors
@@ -28,9 +28,6 @@ async def _get_system_info() -> dict[str, Any]:
         }
         baseboard { manufacturer model version serial assetTag }
         system { manufacturer model version serial uuid sku }
-        versions { kernel openssl systemOpenssl systemOpensslLib node v8 npm yarn pm2 gulp grunt git tsc mysql redis mongodb apache nginx php docker postfix postgresql perl python gcc unraid }
-        apps { installed started }
-        # Remove devices section as it has non-nullable fields that might be null
         machineId
         time
       }
@@ -216,20 +213,26 @@ def register_system_tools(mcp: FastMCP) -> None:
 
     @mcp.tool()
     async def get_network_config() -> dict[str, Any]:
-        """Retrieves network configuration details, including access URLs."""
+        """Retrieves network configuration details from server settings."""
+        # Note: The 'network' query doesn't exist in this Unraid schema.
+        # Returning basic info from vars instead.
         query = """
         query GetNetworkConfig {
-          network {
+          vars {
             id
-            accessUrls { type name ipv4 ipv6 }
+            name
+            port
+            portssl
+            useSsl
+            localTld
           }
         }
         """
         try:
             logger.info("Executing get_network_config tool")
             response_data = await make_graphql_request(query)
-            network = response_data.get("network", {})
-            return dict(network) if isinstance(network, dict) else {}
+            vars_data = response_data.get("vars", {})
+            return dict(vars_data) if isinstance(vars_data, dict) else {}
         except Exception as e:
             logger.error(f"Error in get_network_config: {e}", exc_info=True)
             raise ToolError(f"Failed to retrieve network configuration: {str(e)}") from e
